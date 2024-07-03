@@ -42,10 +42,22 @@ public class Query<S: Storable>: Equatable, Codable {
         return self
     }
 
+    @discardableResult
+    public func addFilter(expression: String) -> Self where S: Indexable {
+        self.whereClauses.append("\(expression)")
+        return self
+    }
+
+    @discardableResult
+    public func addSort(expression: String) -> Self where S: Indexable {
+        self.sortByClauses.append("\(expression)")
+        return self
+    }
+
     // We break the strong typing so we can keep it flexible to the user of the lib
     public func sql(with page: Page? = nil) -> String {
         let page = page ?? self.page
-        var query = "SELECT id, fullObjectData from \(itemName)"
+        var query = "SELECT id, timeOfDay, fullObjectData from \(itemName)"
         query += whereClauses.count > 0 ? " WHERE \(whereClauses.joined(separator: " AND "))" : ""
         query += sortByClauses.count > 0 ? " ORDER BY \(sortByClauses.joined(separator: ", "))" : ""
         if let page = page {

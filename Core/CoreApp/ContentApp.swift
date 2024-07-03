@@ -3,8 +3,7 @@ import UIKit
 
 enum ContentApp: AnyStateApp {
     public struct Helpers {
-        let networkHelper: NetworkHelper
-        let movieRepo: Repository<Movie>
+        let venueRepo: Repository<Venue>
     }
 
     public static func initialState() -> State {
@@ -13,7 +12,8 @@ enum ContentApp: AnyStateApp {
 
     public enum Input {
         case checkForData
-        case moviesParsed(items: [Movie])
+        case selectedVenue(item: Venue)
+        case saveVenues(item: [Venue])
     }
 
     public struct State: Equatable, Codable {
@@ -22,42 +22,28 @@ enum ContentApp: AnyStateApp {
 
     public enum Effect: Equatable {
         case loadHistoricalEvents
-        case saveToRepository(items: [Movie])
+        case saveToRepository(items: [Venue])
     }
 
-    // TODO: Should we get access to the helpers here? otherwise you always
     // need to create a new effect to dispatch to another state machine
     public static func handle(event: Input, with state: State, and helpers: Helpers) -> Next<State, Effect> {
         switch event {
         case .checkForData:
             return .with(.loadHistoricalEvents)
-        case .moviesParsed(let items):
+        case .selectedVenue(var item):
+            item.timeOfDay = Date.now
+            return .with(.saveToRepository(items: [item])) // Saves the dated version
+        case .saveVenues(let items):
             return .init(state: state, effects: [.saveToRepository(items: items)])
         }
     }
 
     public static func handle(effect: Effect, with state: State, on app: AnyDispatch<Input, Helpers>) {
         switch effect {
-        case .loadHistoricalEvents:
-            let defaults = UserDefaults.standard
-
-            if defaults.bool(forKey: "dataLoaded") != true {
-                defaults.set(true, forKey: "dataLoaded")
-                defaults.synchronize()
-
-                let asset = NSDataAsset(name: "movies", bundle: Bundle.main)
-                let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                decoder.dateDecodingStrategy = .secondsSince1970
-                if let movies = try? decoder.decode([Movie].self, from: asset!.data) {
-                    app.dispatch(event: .moviesParsed(items: movies))
-                } else {
-                    fatalError("Failed to read")
-                }
-            }
+        case .loadHistoricalEvents: 
             break
         case .saveToRepository(let items):
-            _ = app.helpers.movieRepo.dispatch(.add(items: items))
+            _ = app.helpers.venueRepo.dispatch(.add(items: items))
         }
     }
 }

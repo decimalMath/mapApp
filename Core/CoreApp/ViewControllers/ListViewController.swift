@@ -7,14 +7,16 @@
 
 import Foundation
 import UIKit
+import MapKit
 import SnapKit
 import Combine
 
 class ListViewController: UIViewController {
 
     private var contentApp: StateApp<ContentApp>
-    private let repo: Repository<Movie>
+    private let repo: Repository<Venue>
     private let searchController = UISearchController(searchResultsController: nil)
+    private let searchManager = LocationSearchManager()
     private var lastOp: Operation?
 
     private var collectionView: UICollectionView!
@@ -40,22 +42,17 @@ class ListViewController: UIViewController {
     }()
 
     init() {
-        repo = Repository<Movie>()
+        repo = Repository<Venue>()
+
+        searchManager.startUpdatingLocation()
 
         contentApp = StateApp<ContentApp>(
-            helpers: .init(
-                networkHelper: NetworkHelper(),
-                movieRepo: repo
-            )
+            helpers: .init(venueRepo: repo)
         )
-
-        let query = repo.stateApp.helpers.modelBuilder.defaultQuery()
-        query.addSort(field: .year, expression: "DESC")
-        _ = repo.dispatch(.set(query: query))
-
-        contentApp.dispatch(.checkForData)
         
         super.init(nibName: nil, bundle: nil)
+
+        defaultSearch()
     }
 
     required init?(coder: NSCoder) {
@@ -71,6 +68,22 @@ class ListViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         _ = repo.dispatch(.reloadItems)
+    }
+
+    private func defaultSearch() {
+        let minutesDiffFromNow = """
+            ABS(
+                (strftime('%H', timeOfDay) * 60 + strftime('%M', timeOfDay)) -
+                (strftime('%H', 'now') * 60 + strftime('%M', 'now'))
+            )
+        """
+
+        let query = repo.stateApp.helpers.modelBuilder.defaultQuery()
+        query.addFilter(expression: "\(minutesDiffFromNow) <= 30")
+        query.addSort(expression: "\(minutesDiffFromNow) ASC")
+        _ = repo.dispatch(.set(query: query))
+
+        contentApp.dispatch(.checkForData)
     }
 
     private func setup() {
@@ -91,7 +104,7 @@ class ListViewController: UIViewController {
 
         searchController.searchResultsUpdater = self
         searchController.obscuresBackgroundDuringPresentation = false
-        searchController.searchBar.placeholder = "Search Movies"
+        searchController.searchBar.placeholder = "Add new places"
         navigationItem.searchController = searchController
         definesPresentationContext = true
 
@@ -108,9 +121,28 @@ extension ListViewController: UICollectionViewDelegate, UICollectionViewDataSour
         guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "listItemCell", for: indexPath) as? ListItemCell else {
             fatalError()
         }
-        let movie = repo.get(itemAt: indexPath.row)
-        if let movie = movie {
-            cell.configure(text: "\(movie.title)")
+
+        if let venue = repo.get(itemAt: indexPath.row) {
+            cell.imageView.image = nil
+            cell.identifier = venue.id
+            cell.configure(text: "\(venue.title)")
+            let coordinate = CLLocationCoordinate2D(latitude: venue.latitude!, longitude: venue.longitude!)
+            // Retrieving a cached image (also checks availability)
+            if let cachedImage = ImageCache.shared.getCachedImage(withID: venue.id) {
+                // Use the cached image
+                cell.imageView.image = cachedImage
+            } else {
+                searchManager.generateMapImage(for: coordinate, size: cell.frame.size) { [weak cell] image in
+                    guard let cell = cell, let mapImage = image else { return }
+                    guard cell.identifier == venue.id else {return}
+                    _ = ImageCache.shared.saveImage(mapImage, withID: venue.id)
+                    DispatchQueue.main.async {
+                        cell.imageView.image = mapImage
+                    }
+                }
+            }
+
+
         } else {
             cell.configure(text: "")
         }
@@ -118,22 +150,40 @@ extension ListViewController: UICollectionViewDelegate, UICollectionViewDataSour
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        let movie = repo.get(itemAt: indexPath.row)
+        guard let venue = repo.get(itemAt: indexPath.row) else { return }
 
-        print("TODO: Push: \(movie?.id ?? "not found") ")
+        contentApp.dispatch(.selectedVenue(item: venue))
+
+        defaultSearch()
     }
 }
 
 extension ListViewController: UISearchResultsUpdating {
     func updateSearchResults(for searchController: UISearchController) {
-        var query = repo.stateApp.helpers.modelBuilder.searchQuery()
-        if let queryText = searchController.searchBar.text, !queryText.isEmpty {
-            query.addFilter(field: .title, expression: "MATCH \"\(queryText)\"")
-        } else {
-            query = repo.stateApp.helpers.modelBuilder.defaultQuery()
-        }
         lastOp?.cancel()
-        lastOp = repo.dispatch(.set(query: query))
+
+        if let queryText = searchController.searchBar.text, !queryText.isEmpty {
+            searchManager.performSearch(searchBarText: queryText) { [weak self] items in
+                guard let self = self, let items = items else { return }
+                let venues: [Venue] = items.map {
+                    Venue(
+                        title: $0.name ?? "",
+                        address: $0.name ?? "",
+                        latitude: $0.placemark.location?.coordinate.latitude,
+                        longitude: $0.placemark.location?.coordinate.longitude,
+                        timeOfDay: nil
+                    )
+                }
+
+                _ = contentApp.dispatch(.saveVenues(item: venues))
+            }
+            let query = repo.stateApp.helpers.modelBuilder.searchQuery()
+            query.addFilter(field: .title, expression: "MATCH \"\(queryText)\"")
+            lastOp = repo.dispatch(.set(query: query))
+        } else {
+            defaultSearch()
+            searchManager.stopUpdatingLocation()
+        }
         contentApp.dispatch(.checkForData)
     }
 }

@@ -12,6 +12,8 @@ import SnapKit
 class ListItemCell: UICollectionViewCell {
 
     var titleLabel: UILabel!
+    var imageView: UIImageView!
+    var identifier: String?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -24,14 +26,22 @@ class ListItemCell: UICollectionViewCell {
 
     private func setup() {
         titleLabel = UILabel()
+        imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
         titleLabel.textAlignment = .left
-        titleLabel.textColor = .white
+        titleLabel.textColor = .black
         titleLabel.numberOfLines = 0
         titleLabel.font = titleLabel.font.withSize(31)
+        contentView.addSubview(imageView)
         contentView.addSubview(titleLabel)
-        contentView.backgroundColor = .red
+        contentView.backgroundColor = .white
         titleLabel.snp.makeConstraints { make in
-            make.edges.equalToSuperview().inset(20)
+            make.top.left.equalToSuperview().inset(5)
+        }
+        imageView.snp.makeConstraints { make in
+            make.top.equalToSuperview().inset(40)
+            make.left.bottom.right.equalToSuperview()
         }
     }
 

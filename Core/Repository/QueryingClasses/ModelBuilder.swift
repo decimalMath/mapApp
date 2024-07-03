@@ -59,9 +59,19 @@ public class ModelBuilder<S: Storable> {
                 switch type(of: item.value) {
                 case is Int.Type:
                     b.column(Expression<Int?>(itemLabel))
+                case is Int?.Type:
+                    b.column(Expression<Int?>(itemLabel))
+                case is Double.Type:
+                    b.column(Expression<Double?>(itemLabel))
+                case is Double?.Type:
+                    b.column(Expression<Double?>(itemLabel))
                 case is String.Type:
                     b.column(Expression<String?>(itemLabel))
+                case is String?.Type:
+                    b.column(Expression<String?>(itemLabel))
                 case is Date.Type:
+                    b.column(Expression<Date?>(itemLabel))
+                case is Date?.Type:
                     b.column(Expression<Date?>(itemLabel))
                 default:
                     break
@@ -130,6 +140,8 @@ public class ModelBuilder<S: Storable> {
                 setters.append(Expression<String?>(itemLabel) <- typedItem)
             case let typedItem as Date:
                 setters.append(Expression<Date?>(itemLabel) <- typedItem)
+            case let typedItem as Double:
+                setters.append(Expression<Double?>(itemLabel) <- typedItem)
             default:
                 break
             }
